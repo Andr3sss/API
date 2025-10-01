@@ -1,23 +1,16 @@
-# models.py
-
 from typing import Optional
 from sqlmodel import Field, SQLModel
 
-# Clase Base: Define los campos comunes para las peticiones/respuestas
-class UserBase(SQLModel):
-    name: str
-    email: str
-    
-# Clase Tabla: Hereda de Base y añade metadatos de DB (primary key, table=True)
-class User(UserBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-
-# Clase Base para Productos
-class ProductBase(SQLModel):
-    name: str
-    price: float
+# Modelo Base para crear y actualizar tareas (no incluye el ID)
+class TaskBase(SQLModel):
+    title: str
     description: Optional[str] = None
+    completed: bool = Field(default=False)
 
-# Clase Tabla para Productos
-class Product(ProductBase, table=True):
+# Modelo de la base de datos (incluye ID y metadatos de tabla)
+class Task(TaskBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+
+# Modelo de lectura (incluye el ID para las respuestas)
+class TaskRead(TaskBase):
+    id: int

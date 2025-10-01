@@ -1,70 +1,85 @@
-
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
-from typing import List
+from typing import List, Optional
 
-# Importar funciones de conexión y modelos
 from database import create_db_and_tables, get_session
-from models import User, UserBase, Product, ProductBase
+from models import Task, TaskBase, TaskRead
 
-# Inicialización de la API
+# --- Configuración de la API ---
+
 app = FastAPI(
-    title="FastAPI RDS App",
-    version="2.0.0"
+    title="ToDo App API (RDS)",
+    version="3.0.0"
 )
 
-# Ejecutar la función para crear las tablas al iniciar la aplicación
+# --- Configuración CORS (CRÍTICO para React) ---
+# Permite que cualquier origen ("*") acceda a tu API.
+origins = ["*"] 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Evento de Inicio ---
+
 @app.on_event("startup")
 def on_startup():
+    """Crea la tabla Task al iniciar la aplicación."""
     create_db_and_tables()
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the RDS-powered FastAPI! Access /docs."}
+# --- Rutas CRUD para Task ---
 
-# --- RUTAS CRUD PARA USUARIOS ---
-
-@app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
-def create_user(*, session: Session = Depends(get_session), user: UserBase):
-    db_user = User.model_validate(user)
-    session.add(db_user)
+@app.post("/tasks/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+def create_task(*, session: Session = Depends(get_session), task: TaskBase):
+    """POST /tasks → Crea una tarea."""
+    db_task = Task.model_validate(task)
+    session.add(db_task)
     session.commit()
-    session.refresh(db_user)
-    return db_user
+    session.refresh(db_task)
+    return db_task
 
-@app.get("/users/", response_model=List[User])
-def read_all_users(*, session: Session = Depends(get_session)):
-    users = session.exec(select(User)).all()
-    return users
+@app.get("/tasks/", response_model=List[TaskRead])
+def read_all_tasks(*, session: Session = Depends(get_session)):
+    """GET /tasks → Lista todas las tareas."""
+    tasks = session.exec(select(Task)).all()
+    return tasks
 
-@app.get("/users/{user_id}", response_model=User)
-def read_single_user(*, session: Session = Depends(get_session), user_id: int):
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+@app.get("/tasks/{task_id}", response_model=TaskRead)
+def read_single_task(*, session: Session = Depends(get_session), task_id: int):
+    """GET /tasks/{id} → Consulta una tarea por ID."""
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
-@app.put("/users/{user_id}", response_model=User)
-def update_user(*, session: Session = Depends(get_session), user_id: int, user_update: UserBase):
-    db_user = session.get(User, user_id)
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+@app.put("/tasks/{task_id}", response_model=TaskRead)
+def update_task(*, session: Session = Depends(get_session), task_id: int, task_update: TaskBase):
+    """PUT /tasks/{id} → Actualiza título, descripción o estado de la tarea."""
+    db_task = session.get(Task, task_id)
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task not found")
     
     # Aplicar la actualización
-    updated_data = user_update.model_dump(exclude_unset=True)
-    db_user.sqlmodel_update(updated_data)
+    updated_data = task_update.model_dump(exclude_unset=True)
+    db_task.sqlmodel_update(updated_data)
     
-    session.add(db_user)
+    session.add(db_task)
     session.commit()
-    session.refresh(db_user)
-    return db_user
+    session.refresh(db_task)
+    return db_task
 
-@app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(*, session: Session = Depends(get_session), user_id: int):
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(*, session: Session = Depends(get_session), task_id: int):
+    """DELETE /tasks/{id} → Elimina una tarea."""
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
     
-    session.delete(user)
+    session.delete(task)
     session.commit()
     return
