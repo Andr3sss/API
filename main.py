@@ -1,120 +1,70 @@
-# main.py
 
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
-from typing import List, Optional
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlmodel import Session, select
+from typing import List
 
-# --- SCHEMAS (MODELOS DE DATOS) ---
+# Importar funciones de conexión y modelos
+from database import create_db_and_tables, get_session
+from models import User, UserBase, Product, ProductBase
 
-class BaseItem(BaseModel):
-    name: str
-
-class User(BaseItem):
-    id: Optional[int] = None
-    email: str
-
-class Product(BaseItem):
-    id: Optional[int] = None
-    price: float
-    description: Optional[str] = None
-
-# --- DATOS EN MEMORIA (SIMULACIÓN DE DB) ---
-
-fake_users_db: List[User] = []
-user_counter = 0
-
-fake_products_db: List[Product] = []
-product_counter = 0
-
-# --- INICIALIZACIÓN DE LA API ---
-
+# Inicialización de la API
 app = FastAPI(
-    title="API EC2 Deployment Demo",
-    version="1.0.0"
+    title="FastAPI RDS App",
+    version="2.0.0"
 )
 
-# --- RUTA RAÍZ ---
+# Ejecutar la función para crear las tablas al iniciar la aplicación
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the API! Access /docs for endpoints."}
+    return {"message": "Welcome to the RDS-powered FastAPI! Access /docs."}
 
 # --- RUTAS CRUD PARA USUARIOS ---
 
 @app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
-def create_user(user: User):
-    global user_counter
-    user_counter += 1
-    new_user = user.model_copy(update={"id": user_counter}) 
-    fake_users_db.append(new_user)
-    return new_user
+def create_user(*, session: Session = Depends(get_session), user: UserBase):
+    db_user = User.model_validate(user)
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user
 
 @app.get("/users/", response_model=List[User])
-def read_all_users():
-    return fake_users_db
+def read_all_users(*, session: Session = Depends(get_session)):
+    users = session.exec(select(User)).all()
+    return users
 
 @app.get("/users/{user_id}", response_model=User)
-def read_single_user(user_id: int):
-    for user in fake_users_db:
-        if user.id == user_id:
-            return user
-    raise HTTPException(status_code=404, detail="User not found")
+def read_single_user(*, session: Session = Depends(get_session), user_id: int):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 @app.put("/users/{user_id}", response_model=User)
-def update_user(user_id: int, user: User):
-    for index, stored_user in enumerate(fake_users_db):
-        if stored_user.id == user_id:
-            updated_user = user.model_copy(update={"id": user_id})
-            fake_users_db[index] = updated_user
-            return updated_user
-    raise HTTPException(status_code=404, detail="User not found")
+def update_user(*, session: Session = Depends(get_session), user_id: int, user_update: UserBase):
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Aplicar la actualización
+    updated_data = user_update.model_dump(exclude_unset=True)
+    db_user.sqlmodel_update(updated_data)
+    
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user
 
 @app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int):
-    global fake_users_db
-    initial_length = len(fake_users_db)
-    fake_users_db = [user for user in fake_users_db if user.id != user_id]
-    
-    if len(fake_users_db) == initial_length:
+def delete_user(*, session: Session = Depends(get_session), user_id: int):
+    user = session.get(User, user_id)
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return
-
-# --- RUTAS CRUD PARA PRODUCTOS ---
-
-@app.post("/products/", response_model=Product, status_code=status.HTTP_201_CREATED)
-def create_product(product: Product):
-    global product_counter
-    product_counter += 1
-    new_product = product.model_copy(update={"id": product_counter})
-    fake_products_db.append(new_product)
-    return new_product
-
-@app.get("/products/", response_model=List[Product])
-def read_all_products():
-    return fake_products_db
-
-@app.get("/products/{product_id}", response_model=Product)
-def read_single_product(product_id: int):
-    for product in fake_products_db:
-        if product.id == product_id:
-            return product
-    raise HTTPException(status_code=404, detail="Product not found")
-
-@app.put("/products/{product_id}", response_model=Product)
-def update_product(product_id: int, product: Product):
-    for index, stored_product in enumerate(fake_products_db):
-        if stored_product.id == product_id:
-            updated_product = product.model_copy(update={"id": product_id})
-            fake_products_db[index] = updated_product
-            return updated_product
-    raise HTTPException(status_code=404, detail="Product not found")
-
-@app.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_product(product_id: int):
-    global fake_products_db
-    initial_length = len(fake_products_db)
-    fake_products_db = [product for product in fake_products_db if product.id != product_id]
     
-    if len(fake_products_db) == initial_length:
-        raise HTTPException(status_code=404, detail="Product not found")
+    session.delete(user)
+    session.commit()
     return
